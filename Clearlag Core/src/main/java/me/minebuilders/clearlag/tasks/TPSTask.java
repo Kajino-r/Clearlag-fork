@@ -42,14 +42,18 @@ public class TPSTask extends TaskModule {
         if (configHandler.getConfig().getBoolean("settings.use-internal-tps")) {
 
             try {
+                tpsCalculator = new BukkitTPSYoinker();
+            } catch (Throwable t) {
+                try {
 
-                tpsCalculator = new InternalTPSYoinker();
+                    tpsCalculator = new InternalTPSYoinker();
 
-            } catch (Exception e) {
+                } catch (Exception e) {
 
-                Util.warning("Clearlag failed to use the internal TPS tracker during initialization. Reverted to estimation... (" + e.getMessage() + ")");
+                    Util.warning("Clearlag failed to use the internal TPS tracker during initialization. Reverted to estimation... (" + e.getMessage() + ")");
 
-                tpsCalculator = new EstimatedTPSCalculator();
+                    tpsCalculator = new EstimatedTPSCalculator();
+                }
             }
 
         } else {
@@ -116,6 +120,30 @@ public class TPSTask extends TaskModule {
         double calculateCurrentAverageTPS();
 
         void tick();
+
+    }
+
+    private class BukkitTPSYoinker implements TPSCalculator {
+
+        private final Object server;
+        private final java.lang.reflect.Method getTPSMethod;
+
+        public BukkitTPSYoinker() throws Exception {
+            this.server = Bukkit.getServer();
+            this.getTPSMethod = server.getClass().getMethod("getTPS");
+        }
+
+        @Override
+        public double calculateCurrentAverageTPS() {
+            try {
+                return ((double[]) getTPSMethod.invoke(server))[0];
+            } catch (Exception e) {
+                return 20.0;
+            }
+        }
+
+        @Override
+        public void tick() {}
 
     }
 
