@@ -30,6 +30,12 @@ public class EntityAISpawnListener extends EventModule {
             getAttriInstanceMethod,
             setAttriMethod;
 
+    // Attribute API (1.9+)
+    private boolean useAttributeApi = false;
+    private Object genericFollowRangeEnum;
+    private Method getAttributeMethod;
+    private Method setBaseValueMethod;
+
     private Object followRangeConst;
 
     @AutoWire
@@ -44,26 +50,39 @@ public class EntityAISpawnListener extends EventModule {
     public void setEnabled() {
 
         try {
-            String version = Util.getRawBukkitVersion();
+            // Try to use Bukkit Attribute API (1.9+)
+            if (ReflectionUtil.isClass("org.bukkit.attribute.Attribute")) {
+                Class<?> attributeClass = Class.forName("org.bukkit.attribute.Attribute");
+                genericFollowRangeEnum = Enum.valueOf((Class<Enum>) attributeClass, "GENERIC_FOLLOW_RANGE");
 
-            Class<?> craftEntity = Class.forName("org.bukkit.craftbukkit." + version + ".entity.CraftEntity");
-            Class<?> nmsEntity = Class.forName("net.minecraft.server." + version + ".EntityLiving");
-            Class<?> genAttributes = Class.forName("net.minecraft.server." + version + ".GenericAttributes");
-            Class<?> attribClass = Class.forName("net.minecraft.server." + version + ".AttributeInstance");
+                getAttributeMethod = LivingEntity.class.getMethod("getAttribute", attributeClass);
 
-            Field followRangeField = genAttributes.getDeclaredField(version.contains("1_7") ? "b" : "FOLLOW_RANGE");
-            followRangeField.setAccessible(true);
+                Class<?> attributeInstanceClass = Class.forName("org.bukkit.attribute.AttributeInstance");
+                setBaseValueMethod = attributeInstanceClass.getMethod("setBaseValue", double.class);
 
-            followRangeConst = followRangeField.get(null);
+                useAttributeApi = true;
+            } else {
+                String version = Util.getRawBukkitVersion();
 
-            setAttriMethod = ReflectionUtil.getMethodByName(attribClass, "setValue");
-            setAttriMethod.setAccessible(true);
+                Class<?> craftEntity = Class.forName("org.bukkit.craftbukkit." + version + ".entity.CraftEntity");
+                Class<?> nmsEntity = Class.forName("net.minecraft.server." + version + ".EntityLiving");
+                Class<?> genAttributes = Class.forName("net.minecraft.server." + version + ".GenericAttributes");
+                Class<?> attribClass = Class.forName("net.minecraft.server." + version + ".AttributeInstance");
 
-            getHandleMethod = craftEntity.getDeclaredMethod("getHandle");
-            getHandleMethod.setAccessible(true);
+                Field followRangeField = genAttributes.getDeclaredField(version.contains("1_7") ? "b" : "FOLLOW_RANGE");
+                followRangeField.setAccessible(true);
 
-            getAttriInstanceMethod = ReflectionUtil.getMethodByName(nmsEntity, "getAttributeInstance");
-            getAttriInstanceMethod.setAccessible(true);
+                followRangeConst = followRangeField.get(null);
+
+                setAttriMethod = ReflectionUtil.getMethodByName(attribClass, "setValue");
+                setAttriMethod.setAccessible(true);
+
+                getHandleMethod = craftEntity.getDeclaredMethod("getHandle");
+                getHandleMethod.setAccessible(true);
+
+                getAttriInstanceMethod = ReflectionUtil.getMethodByName(nmsEntity, "getAttributeInstance");
+                getAttriInstanceMethod.setAccessible(true);
+            }
 
             for (World w : Bukkit.getWorlds()) {
                 for (Entity e : w.getEntities()) {
@@ -94,10 +113,19 @@ public class EntityAISpawnListener extends EventModule {
         Double value = mobRanges.get(e.getType());
 
         if (value != null) {
-            setAttriMethod.invoke(
-                    getAttriInstanceMethod.invoke(getHandleMethod.invoke(e), followRangeConst),
-                    value
-            );
+            if (useAttributeApi) {
+                if (e instanceof LivingEntity) {
+                    Object ai = getAttributeMethod.invoke(e, genericFollowRangeEnum);
+                    if (ai != null) {
+                        setBaseValueMethod.invoke(ai, value);
+                    }
+                }
+            } else {
+                setAttriMethod.invoke(
+                        getAttriInstanceMethod.invoke(getHandleMethod.invoke(e), followRangeConst),
+                        value
+                );
+            }
         }
     }
 }
